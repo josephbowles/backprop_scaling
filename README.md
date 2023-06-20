@@ -1,2 +1,11 @@
-# backprop_scaling
-Code to accompany the article "backpropagation scaling in parameterized quantum circuits"
+# Code to acompany the article "backpropagation scaling in parameterized quantum circuits"
+
+The code `backprop_scaling_numerics` allows one to reproduce the results of Figure 6 in the article. 
+
+### Dependencies
+- Pennylane
+- Jax
+- Optax
+
+Contact: bowles.physics@gmail.com
+
