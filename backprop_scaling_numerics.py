@@ -12,7 +12,7 @@ This the numerics to accompany the article 'backpropagation scaling in parameter
 The following code can be used to reproduce plots of the form of Figure 6 of the paper. 
 """
 
-#################################### DATA GENERATION ####################################
+# ################################### DATA GENERATION ####################################
 
 def generate_data(dim, n, length, noise=0.):
     """
@@ -51,7 +51,7 @@ qubits = dim
 seed = 852459
 np.random.seed(seed)
 
-#################################### FUNCTIONS USED IN MODEL GENERATION  ####################################
+# ################################### FUNCTIONS USED IN MODEL GENERATION  ####################################
 
 def cyclic_perm(a):
     "gets all cyclic permutations of a list"
@@ -98,10 +98,10 @@ def square_loss(labels, predictions):
     loss = loss / len(labels)
     return loss
 
-#################################### MODEL DEFINITIONS ####################################
+# ################################### MODEL DEFINITIONS ####################################
 
 
-######## COMMUTING MODEL ##########
+# ####### COMMUTING MODEL ##########
 
 obs=qml.dot([1] * qubits, [qml.PauliZ(i) for i in range(qubits)]) #equivariant observable \mathcal{H}
 
@@ -122,7 +122,7 @@ words_and_wires = waw
 
 num_gen_commuting = sum(len(sublist) for sublist in words_and_wires) #total generators used in model
 num_param_commuting = len(words_and_wires) #total paramters used in model
-num_circuits_commuting = 16 #total number of circuits needed for gradient evalution
+num_circuits_commuting = qubits #total number of circuits needed for gradient evalution
 
 print('number of generators for commuting model: ' + str(num_gen_commuting))
 print('number of circuits for commuting model: ' + str(num_circuits_commuting))
@@ -175,7 +175,7 @@ func_commuting = jax.value_and_grad(cost_commuting) #function used to get cost a
 func_commuting = jax.jit(func_commuting)
 
 
-######## NONCOMMUTING MODEL ##########
+# ####### NONCOMMUTING MODEL ##########
 
 layers = 4
 obs=qml.dot([1] * qubits, [qml.PauliZ(i) for i in range(qubits)])
@@ -197,8 +197,12 @@ noncommuting_words_and_wires = z_words_and_wires+y_words_and_wires+x_words_and_w
 
 num_gens_per_layer = sum(len(sublist) for sublist in noncommuting_words_and_wires)
 num_gens_noncommuting = num_gens_per_layer*layers
+theory_num_gens_noncommuting = layers * qubits / 2 * (qubits + 3)
+assert num_gens_noncommuting == theory_num_gens_noncommuting
 num_param_per_layer = len(noncommuting_words_and_wires)
 num_param_noncommuting = num_param_per_layer*layers
+theory_num_param_noncommuting = layers * (2 + qubits / 2)
+assert num_param_noncommuting == theory_num_param_noncommuting
 num_circuits_noncommuting = num_gens_noncommuting*2 #from parameter shift rule
 
 print('number of generators for noncommuting model: ' + str(num_gens_noncommuting))
@@ -245,7 +249,7 @@ func_noncommuting = jax.value_and_grad(cost_noncommuting)
 func_noncommuting = jax.jit(func_noncommuting)
 
 
-######## QUANTUM CONVOLUTIONAL MODEL ##########
+# ####### QUANTUM CONVOLUTIONAL MODEL ##########
 
 def QCNN_block(params, wires):
     """
@@ -337,24 +341,31 @@ func_QCNN = jax.value_and_grad(cost_QCNN)
 func_QCNN = jax.jit(func_QCNN)
 
 num_param_QCNN = n_layers_qcnn * n_params_layer
-num_gen_QCNN = 29 * n_params_block + 15 * 2  # For the 16 qubit model
-num_circuits_QCNN = 29 * (8*2+2*4) + 15*4  # For the 16 qubit model
+num_gen_QCNN = (2*qubits-3) * n_params_block + (qubits-1) * 2
+num_circuits_QCNN = (2*qubits-3) * (8*2+2*4) + (qubits-1)*2*4
 
 print('number of generators for QCNN model: ' + str(num_gen_QCNN))
 print('number of circuits for QCNN model: ' + str(num_circuits_QCNN))
 print('number of parameters for QCNN model: ' + str(num_param_QCNN))
 
-######## SEPARABLE MODEL ##########
+# ####### SEPARABLE MODEL ##########
 
-dev = qml.device('default.qubit',wires=qubits)
+# +
+dev = qml.device('default.qubit',wires=1)
 @qml.qnode(dev, interface='jax')
-def separable_model(params,x):
-    for q in range(qubits):
-        qml.RY(x[q],wires=q)
-    #arbitrary single qubit rotation on each qubit
-    for q in range(qubits):
-        qml.Rot(params[3*q],params[3*q+1],params[3*q+2],wires=q)
-    return qml.expval(obs)
+def _separable_model(params,x):
+    qml.RY(x,wires=0)
+    #arbitrary single qubit rotation
+    qml.RZ(params[0],wires=0)
+    qml.RX(params[1],wires=0)
+    qml.RY(params[2],wires=0)
+    return qml.expval(qml.PauliZ(0))
+
+def separable_model(params, x):
+    return jnp.sum(jnp.array([_separable_model(params[3*q:3*q+3], x[q]) for q in range(qubits)]))
+
+
+# -
 
 separable_model = jax.vmap(separable_model,(None,0))
 separable_model_jit = jax.jit(separable_model)
@@ -367,7 +378,7 @@ func_separable = jax.value_and_grad(cost_separable)
 func_separable = jax.jit(func_separable)
 
 
-#################################### TRAINING AND EVAL FUNCTIONS ####################################
+# ################################### TRAINING AND EVAL FUNCTIONS ####################################
 
 def accuracy(labels, predictions):
     """class prediction accuracy"""
@@ -406,7 +417,7 @@ def run_adam(func, lr, init_params, model_eval, num_iter=5):
             print([cst,acc])
     return params, history
 
-#################################### TRAINING ####################################
+# ################################### TRAINING ####################################
 
 np.random.seed(seed)
 X, Y = generate_data(qubits, 1000, dim//2,noise=1.0) #train dataset
@@ -470,7 +481,7 @@ accs_noncommuting = np.loadtxt('acc_noncommuting.txt')
 accs_QCNN = np.loadtxt('acc_qcnn.txt')
 
 
-#################################### PLOTS ####################################
+# ################################### PLOTS ####################################
 
 #shots per iteration for each model (see paper for more details)
 spi_noncommuting = num_circuits_noncommuting * batch_size * 1000
@@ -538,3 +549,26 @@ ax1.legend()
 
 plt.savefig('plot.pdf', dpi=300)
 
+
+# Plot for the separable model
+fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(6, 8))
+fig.tight_layout(pad=5.0)
+########
+ax1.grid(True, which="both")
+ax1.set_ylabel('cost', fontsize=12)
+ax1.set_xlabel("shots", fontsize=12)
+ax1.set_xscale('log')
+########
+ax2.grid(True, which="both")
+ax2.set_ylabel('test accuracy', fontsize=12)
+ax2.set_xlabel("shots", fontsize=12)
+ax2.set_xscale('log')
+# ax2.set_ylim(0.3,1.03)
+ax1.set_facecolor((.95, .95, .95))
+ax2.set_facecolor((.95, .95, .95))
+c = (71 / 256, 150 / 256, 157 / 256)
+steps = np.arange(num_iter)
+for t in range(1, trials):
+    ax1.plot(steps * spi_separable,[costs_separable[t][i] for i in range(num_iter)],alpha=alpha,color=c)
+    ax2.plot(steps * spi_separable,[accs_separable[t][i] for i in range(num_iter)],alpha=alpha,color=c)
+fig.savefig("plot_separable.pdf", dpi=300)
